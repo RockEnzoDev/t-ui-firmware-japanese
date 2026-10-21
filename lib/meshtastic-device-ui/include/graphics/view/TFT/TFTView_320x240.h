@@ -543,7 +543,7 @@ class TFTView_320x240 : public MeshtasticView
         char id[20];   // folder name under /apps
         char name[16]; // tile label
         char desc[92]; // one line, as published in catalog.json
-        char kind[8];  // "game" / "tool" / "toy" - drives the filter tabs
+        char kind[8];  // catalog category
         char ver[8];   // version in the catalog
         char have[8];  // version actually on the card ("" = unknown/older)
         uint32_t bytes;
@@ -567,8 +567,8 @@ class TFTView_320x240 : public MeshtasticView
     lv_obj_t *getapps_screen = nullptr;
     lv_obj_t *getapps_status = nullptr;
     lv_obj_t *getapps_list = nullptr;
-    lv_obj_t *getapps_tabs[3] = {nullptr, nullptr, nullptr}; // All / Games / Tools
-    int getapps_filter = 0;                                  // 0 all, 1 games, 2 tools
+    lv_obj_t *getapps_tabs[3] = {nullptr, nullptr, nullptr};
+    int getapps_filter = 0;
     void getappsSetFilter(int which);
     lv_timer_t *getapps_timer = nullptr;
     uint32_t getapps_deadline = 0;

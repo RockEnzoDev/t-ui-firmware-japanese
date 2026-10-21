@@ -393,7 +393,6 @@ extern "C" void tdeck_ftp_stop(void);
 extern "C" void tdeck_ftp_service(void);
 extern "C" bool tdeck_ftp_running(void);
 // Snake game module (SnakeGame.cpp) — opened from its launcher tile.
-extern "C" void snake_open(void);
 // Notification centre (NotificationCenter.cpp): who messaged you, visible from any app.
 extern "C" void notif_add(uint32_t from, uint8_t ch, bool isChannel, const char *who, const char *text);
 #include <esp_heap_caps.h> // free-internal-heap readout for @@info
@@ -427,16 +426,13 @@ extern "C" void channels_open(void);
 extern "C" void notes_open(void);
 extern "C" void gemini_open(void); // GeminiApp.cpp - ask Gemini a question over wi-fi
 extern "C" void gemini_idle_check(void); // frees its screen + buffers when unused
-extern "C" void chess_open(void);        // ChessApp.cpp - play the engine
 extern "C" void tdeck_tile_cache_clear(void); // SdFatService.cpp - frees ~1.5MB of decoded tiles
-extern "C" void chess_idle_check(void);  // 128 objects; hands them back when unused
+extern "C" void tdeck_chess_release(void); // releases the chess engine's PSRAM when opening Maps
 extern "C" void mail_open(void);       // MailApp.cpp - Gmail setup form + inbox count
 extern "C" void mail_service_ui(void); // polls the inbox check while that screen is up
 extern "C" void notes_open_file(const char *path); // Files app opens .txt files with this
 // Calculator module (CalculatorApp.cpp).
-extern "C" void calculator_open(void);
 extern "C" void lua_app_open(void);   // Lua app engine — hello demo (from SD)
-extern "C" void breakout_open(void);  // Breakout game (Lua, from SD)
 extern "C" void metronome_open(void);  // Metronome tool (Lua, from SD)
 extern "C" void lua_seed_bundled(void); // first-run install of bundled SD apps (once, versioned)
 extern "C" void lua_run_path(const char *path); // run a user app by its SD script path
@@ -883,52 +879,9 @@ struct LauncherApp {
 };
 
 static const LauncherApp kApps[] = {
-    // Mesh opens the full Meshtastic MUI (nodes/map/messages/settings all live in there).
-    // Purple, not the green it used to be: Chats is green too, and side by side on page one
-    // the two tiles were indistinguishable at a glance now that the tint colours them.
-    {"Mesh", &img_home_button_image, 0xbf5af2, &objects.home_button, &objects.home_panel, &objects.top_panel, nullptr},
-    // Notes = self-contained module (NotesApp.cpp), .txt files in /notes on SD.
-    {"Notes", &img_messages_button_image, 0xffd60a, nullptr, nullptr, nullptr, &notes_open},
-    // Jake's ask. ⚠️ Using it drops Bluetooth until the next reboot (one antenna); the app says
-    // so on screen rather than letting a lost phone link look like a bug.
-    {"Gemini", &img_messages_button_image, 0x30d158, nullptr, nullptr, nullptr, &gemini_open},
-    {"Mail", &img_messages_button_image, 0xff9f0a, nullptr, nullptr, nullptr, &mail_open},
-    {"Chess", &img_messages_button_image, 0xf2f2f2, nullptr, nullptr, nullptr, &chess_open},
-    // Calculator = self-contained module (CalculatorApp.cpp).
-    {"Calculator", &img_nodes_button_image, 0xff9f0a, nullptr, nullptr, nullptr, &calculator_open},
-    // Breakout = a Lua GAME loaded from /apps/breakout/main.lua on the SD card.
-    {"Breakout", &img_nodes_button_image, 0x0a84ff, nullptr, nullptr, nullptr, &breakout_open, "/apps/breakout/main.lua"},
-    // Metronome = a Lua TOOL loaded from /apps/metronome/main.lua on the SD card.
-    // (Deleting its folder on the SD card uninstalls it — its tile then disappears on reboot.)
-    {"Metronome", &img_messages_button_image, 0xbf5af2, nullptr, nullptr, nullptr, &metronome_open,
-     "/apps/metronome/main.lua"},
-    // Files = our own SD-card browser screen.
-    {"Files", &img_map_button_image, 0x0a84ff, nullptr, nullptr, nullptr, &TFTView_320x240::openFilesAction},
-    // Maps = our own standalone map app (same SD-card tiles as the mesh map, own screen).
-    {"Maps", &img_map_button_image, 0x5ac8fa, nullptr, nullptr, nullptr, &TFTView_320x240::openMapsAction},
-    // Settings = our own screen (mesh kill switch lives here), opened via a custom action.
-    {"Settings", &img_settings_button_image, 0x8e8e93, nullptr, nullptr, nullptr, &TFTView_320x240::openSettingsAction},
-    // Get Apps = browse the published catalog over Wi-Fi and install straight to the SD card.
-    {"Get Apps", &img_nodes_button_image, 0xbf5af2, nullptr, nullptr, nullptr, &TFTView_320x240::openGetAppsAction},
-    // Snake = self-contained game module (SnakeGame.cpp), WASD/swipe controls.
-    {"Snake", &img_nodes_button_image, 0x30d158, nullptr, nullptr, nullptr, &snake_open},
-    // Flashlight = full-white screen at max backlight (its own action).
-    {"Flashlight", &img_nodes_button_image, 0xffd60a, nullptr, nullptr, nullptr, &TFTView_320x240::openFlashlightAction},
-    // Stopwatch = self-contained count-up timer module (StopwatchApp.cpp).
-    // Renamed from "Stopwatch": it is a stopwatch, a countdown and now an alarm, and Jake's
-    // call on t-ui#9 was "we can add to the timer app and rename it clock".
-    {"Clock", &img_messages_button_image, 0x64d2ff, nullptr, nullptr, nullptr, &stopwatch_open},
-    // Nodes = our own node list (NodesApp.cpp), with a star on each row. Deliberately
-    // NOT the Mesh app's node panel: keeping it separate is what makes a device-ui
-    // update a clean merge.
-    {"Nodes", &img_nodes_button_image, 0x5ac8fa, nullptr, nullptr, nullptr, &nodes_open},
-    // Favorites = the same list filtered to the starred ones.
-    {"Favorites", &img_nodes_button_image, 0xffd60a, nullptr, nullptr, nullptr, &favorites_open},
-    // Conversations = who you are talking to, plus the channels you listen to.
+    // Keep the launcher focused on messaging, with Settings available for setup.
     {"Chats", &img_nodes_button_image, 0x30d158, nullptr, nullptr, nullptr, &channels_open},
-    // Notifications = what has come in while you were elsewhere. Tapping the unread count in
-    // the top bar opens the same page; this tile is how you get there when the count is zero.
-    {"Alerts", &img_messages_button_image, 0xff453a, nullptr, nullptr, nullptr, &notif_open},
+    {"Settings", &img_settings_button_image, 0x8e8e93, nullptr, nullptr, nullptr, &TFTView_320x240::openSettingsAction},
 };
 
 // --- simple per-app icons, drawn from lv_obj primitives (no image assets needed) ---
@@ -1004,13 +957,7 @@ void buildTileIcon(lv_obj_t *tile, const char *name, uint32_t color)
     lv_obj_clear_flag(ic, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(ic, LV_OBJ_FLAG_CLICKABLE);
 
-    if (!strcmp(name, "Snake")) { // green body squares + red food
-        icBox(ic, 5, 22, 9, 9, 0x30d158, 2);
-        icBox(ic, 14, 22, 9, 9, 0x30d158, 2);
-        icBox(ic, 14, 13, 9, 9, 0x30d158, 2);
-        icBox(ic, 23, 13, 9, 9, 0x30d158, 2);
-        icBox(ic, 34, 4, 8, 8, 0xff453a, 4);
-    } else if (!strcmp(name, "Deep Space")) {
+    if (!strcmp(name, "Deep Space")) {
         // Black sky, a scatter of stars, and your ship climbing up through it. Drawn in
         // creation order so the void goes down first and everything else lands on top.
         icBox(ic, 0, 0, 46, 40, 0x05050a, 6); // the void
@@ -1084,11 +1031,6 @@ void buildTileIcon(lv_obj_t *tile, const char *name, uint32_t color)
         icBox(ic, 19, 2, 6, 38, color, 3);  // vertical
         icBox(ic, 2, 19, 40, 6, color, 3);  // horizontal
         icBox(ic, 33, 5, 5, 5, color, LV_RADIUS_CIRCLE); // small spark off the shoulder
-    } else if (!strcmp(name, "Chess")) { // a pawn: head, collar, waist, base
-        icBox(ic, 16, 4, 10, 10, color, LV_RADIUS_CIRCLE); // head
-        icBox(ic, 13, 15, 16, 4, color, 2);                // collar
-        icBox(ic, 17, 19, 8, 10, color, 2);                // body
-        icBox(ic, 10, 30, 22, 6, color, 2);                // base
     } else if (!strcmp(name, "Mail")) { // envelope: body, then the flap as two leaning bars
         icBox(ic, 4, 9, 36, 24, color, 3);                   // the envelope body
         icBox(ic, 8, 13, 16, 4, 0x1c1c1e, 1);                // flap, left half, sloping down
@@ -1103,15 +1045,6 @@ void buildTileIcon(lv_obj_t *tile, const char *name, uint32_t color)
         icBox(ic, 15, 16, 16, 2, 0x8e8e93, 1);
         icBox(ic, 15, 22, 16, 2, 0x8e8e93, 1);
         icBox(ic, 15, 28, 10, 2, 0x8e8e93, 1);
-    } else if (!strcmp(name, "Calculator")) { // screen + button grid
-        icBox(ic, 12, 3, 22, 34, 0x3a3a3c, 4);
-        icBox(ic, 15, 6, 16, 6, color, 1);
-        icBox(ic, 16, 18, 4, 4, 0xffffff, 1);
-        icBox(ic, 22, 18, 4, 4, 0xffffff, 1);
-        icBox(ic, 28, 18, 4, 4, 0xffffff, 1);
-        icBox(ic, 16, 25, 4, 4, 0xffffff, 1);
-        icBox(ic, 22, 25, 4, 4, 0xffffff, 1);
-        icBox(ic, 28, 25, 4, 4, 0xffffff, 1);
     } else if (!strcmp(name, "Settings")) { // gear = ring + 4 nubs
         icRing(ic, 11, 7, 26, color, 5);
         icBox(ic, 21, 0, 4, 6, color, 1);
@@ -1128,15 +1061,6 @@ void buildTileIcon(lv_obj_t *tile, const char *name, uint32_t color)
         icBox(ic, 15, 2, 9, 9, color, LV_RADIUS_CIRCLE);
         icBox(ic, 4, 26, 9, 9, color, LV_RADIUS_CIRCLE);
         icBox(ic, 33, 26, 9, 9, color, LV_RADIUS_CIRCLE);
-    } else if (!strcmp(name, "Breakout")) { // brick rows + ball + paddle
-        icBox(ic, 5, 3, 10, 4, 0xff453a, 1);
-        icBox(ic, 17, 3, 10, 4, 0xff9f0a, 1);
-        icBox(ic, 29, 3, 10, 4, 0xffd60a, 1);
-        icBox(ic, 5, 9, 10, 4, 0x30d158, 1);
-        icBox(ic, 17, 9, 10, 4, 0xff453a, 1);
-        icBox(ic, 29, 9, 10, 4, 0xff9f0a, 1);
-        icBox(ic, 21, 22, 5, 5, 0xffffff, 2);      // ball
-        icBox(ic, 14, 33, 18, 4, 0x0a84ff, 2);     // paddle
     } else if (!strcmp(name, "Metronome")) { // pyramid body + swinging bob
         icBox(ic, 12, 31, 22, 5, color, 1);
         icBox(ic, 15, 23, 16, 8, color, 1);
@@ -1830,7 +1754,6 @@ void TFTView_320x240::createLauncher(void)
 
             mail_service_ui(); // no-op unless the Mail screen is up and a check is running
             gemini_idle_check(); // hands Gemini's memory back once it has been left alone
-            chess_idle_check();  // and the chess board, which is the biggest of them
 
             // Coverage overlay: self-throttled by its own change check, so calling it on every
             // pass costs a handful of comparisons when nothing has moved.
@@ -1908,16 +1831,14 @@ void TFTView_320x240::createLauncher(void)
     // second for the whole life of the device to notice a key combo nobody presses in a normal
     // week. A fifth of a second later is imperceptible to a human reaching for Alt+C, and it is
     // ~13 fewer wake-ups per second on a chip that has plenty else to do.
-    // Poll the Alt+C calibration request (keyboard-driven, so NOT gated on the trackball). When the
-    // lock pad is up, Alt+C runs touch calibration then re-shows the pad — a reliable way to fix a
-    // miscalibrated screen without needing a working touch to reach Settings.
+    // Alt+C is the recovery path when touch is too far off to operate the lock screen.
     lv_timer_create(
         [](lv_timer_t *) {
             if (!tdeck_calib_request)
                 return;
             tdeck_calib_request = false;
-            // Only from the lock pad (the requested entry point, and the first screen after a wake).
-            if (THIS->lockpad_screen && lv_screen_active() == THIS->lockpad_screen)
+            if ((THIS->lockpad_screen && lv_screen_active() == THIS->lockpad_screen) ||
+                (THIS->lockglance_screen && lv_screen_active() == THIS->lockglance_screen))
                 THIS->startCalibrationFromLock();
         },
         250, NULL); // was 60ms - see note above
@@ -1947,9 +1868,8 @@ void TFTView_320x240::createLauncher(void)
         500, NULL);
 #endif
 
-    // Require the PIN at boot. A code is always in effect (default 1234 until the user sets
-    // their own), so effectiveLockPin() is non-zero and the device boots locked. Reuses the
-    // normal unlock path; bootHome above keeps the pad up through the config-sync window.
+    // Respect an explicitly saved lock preference. New installations default to unlocked so
+    // setup and touch calibration remain reachable on the first boot.
     if (tdeck_lock_mode() == 1) {
         // Swipe: the glance is the whole lock. No keypad at boot or ever.
         showLockGlance();
@@ -1963,44 +1883,10 @@ void TFTView_320x240::createLauncher(void)
     }
 }
 
-// Discover user-added apps on the SD card: any /apps/<folder>/main.lua that isn't one
-// of our built-in bundled apps. Runs once at boot. Fills userAppDirs[].
+// Keep the launcher focused on the built-in messaging and settings screens.
 void TFTView_320x240::scanUserApps(void)
 {
     userAppCount = 0;
-#if HAS_SDCARD && !HAS_SD_MMC && !ARCH_PORTDUINO
-    if (!sdCard)
-        return;
-    FsFile dir = SDFs.open("/apps", O_RDONLY);
-    if (!dir || !dir.isDirectory())
-        return;
-    FsFile entry;
-    while (userAppCount < kMaxUserApps && (entry = dir.openNextFile())) {
-        char nm[24];
-        entry.getName(nm, sizeof(nm));
-        bool isDir = entry.isDirectory();
-        entry.close();
-        if (!isDir || nm[0] == '.')
-            continue;
-        // our bundled apps already appear via kApps (with custom icons) — skip them here
-        if (!strcmp(nm, "breakout") || !strcmp(nm, "metronome") || !strcmp(nm, "hello"))
-            continue;
-        char lp[48];
-        snprintf(lp, sizeof(lp), "/apps/%s/main.lua", nm);
-        if (SDFs.exists(lp)) {
-            strncpy(userAppDirs[userAppCount], nm, sizeof(userAppDirs[0]) - 1);
-            userAppDirs[userAppCount][sizeof(userAppDirs[0]) - 1] = 0;
-            userAppCount++;
-        }
-    }
-    // Say so if we ran out of room. Hitting the cap used to be completely silent - the extra
-    // apps just were not there, with nothing anywhere to say why - and folders come back in
-    // creation order, so the app that vanishes is the one you just installed. That is the worst
-    // possible one to lose quietly.
-    if (userAppCount >= kMaxUserApps)
-        ILOG_WARN("[DeviceUI] user app limit reached (%d) - later apps in /apps were NOT loaded", kMaxUserApps);
-    dir.close();
-#endif
 }
 
 void TFTView_320x240::runUserApp(int userIdx)
@@ -3986,7 +3872,6 @@ void TFTView_320x240::mapsInitTileStyle(void)
 }
 
 extern "C" void tdeck_url_tiles_hangup(bool onlyIfIdle); // URLService.cpp - hang up the tile server
-extern "C" void tdeck_chess_release(void); // TDeckChess.cpp - no-op while it is thinking
 
 void TFTView_320x240::openMaps(void)
 {
@@ -6574,6 +6459,10 @@ int TFTView_320x240::getappsParseCatalog(const char *json, int len)
                 a.desc[0] = 0;
             if (!jsonStrField(ob, oe, "kind", a.kind, sizeof(a.kind)))
                 strcpy(a.kind, "tool"); // anything unlabelled lands under Tools
+            if (strcmp(a.kind, "game") == 0) {
+                p = oe + 1;
+                continue;
+            }
             if (!jsonStrField(ob, oe, "ver", a.ver, sizeof(a.ver)))
                 strcpy(a.ver, "1");
             a.bytes = jsonIntField(ob, oe, "bytes");
@@ -6727,11 +6616,6 @@ void TFTView_320x240::getappsBuildList(void)
     int shown = 0;
     for (int i = 0; i < storeAppCount; i++) {
         StoreApp &a = storeApps[i];
-        // Filter tabs: 1 = games only, 2 = everything that isn't a game (tools + toys).
-        if (getapps_filter == 1 && strcmp(a.kind, "game") != 0)
-            continue;
-        if (getapps_filter == 2 && strcmp(a.kind, "game") == 0)
-            continue;
         shown++;
 
         lv_obj_t *row = lv_obj_create(getapps_list);
@@ -6854,19 +6738,9 @@ void TFTView_320x240::getappsBuildList(void)
     }
 }
 
-// Switch category and redraw. Highlights the chosen tab so it's obvious which is active.
 void TFTView_320x240::getappsSetFilter(int which)
 {
-    getapps_filter = which;
-    for (int i = 0; i < 3; i++) {
-        if (!getapps_tabs[i])
-            continue;
-        bool on = (i == which);
-        lv_obj_set_style_bg_color(getapps_tabs[i], lv_color_hex(on ? 0x30d158 : 0x2c2c2e), LV_PART_MAIN);
-        lv_obj_t *lbl = lv_obj_get_child(getapps_tabs[i], 0);
-        if (lbl)
-            lv_obj_set_style_text_color(lbl, lv_color_hex(on ? 0x000000 : 0xffffff), LV_PART_MAIN);
-    }
+    (void)which;
     getappsBuildList();
 }
 
@@ -7053,37 +6927,10 @@ void TFTView_320x240::openGetApps(void)
         lv_obj_align(getapps_status, LV_ALIGN_TOP_MID, 0, 30);
         lv_label_set_text(getapps_status, "");
 
-        // Category tabs. The catalog already labels every app game/tool/toy; this just
-        // surfaces it so a growing list stays browsable.
-        {
-            const char *tabNames[3] = {"All", "Games", "Tools"};
-            for (int i = 0; i < 3; i++) {
-                lv_obj_t *tab = lv_btn_create(getapps_screen);
-                lv_obj_set_size(tab, 96, 24);
-                lv_obj_align(tab, LV_ALIGN_TOP_LEFT, 8 + i * 102, 44);
-                lv_obj_set_style_radius(tab, 6, LV_PART_MAIN);
-                lv_obj_set_style_bg_color(tab, lv_color_hex(i == 0 ? 0x30d158 : 0x2c2c2e), LV_PART_MAIN);
-                lv_obj_t *tl = lv_label_create(tab);
-                lv_obj_set_style_text_font(tl, &ui_font_montserrat_12, LV_PART_MAIN);
-                lv_label_set_text(tl, tabNames[i]);
-                lv_obj_set_style_text_color(tl, lv_color_hex(i == 0 ? 0x000000 : 0xffffff), LV_PART_MAIN);
-                lv_obj_center(tl);
-                lv_obj_set_user_data(tab, (void *)(intptr_t)i);
-                lv_obj_add_event_cb(
-                    tab,
-                    [](lv_event_t *e) {
-                        lv_obj_t *b = (lv_obj_t *)lv_event_get_target(e);
-                        THIS->getappsSetFilter((int)(intptr_t)lv_obj_get_user_data(b));
-                    },
-                    LV_EVENT_CLICKED, NULL);
-                getapps_tabs[i] = tab;
-            }
-        }
-
-        // Scrolling list of apps, sitting between the tabs and the Back button.
+        // Scrolling list of add-on tools.
         getapps_list = lv_obj_create(getapps_screen);
-        lv_obj_set_size(getapps_list, 310, 102); // -20 for the bar: at 122 the list ran under the Back button at the bottom
-        lv_obj_align(getapps_list, LV_ALIGN_TOP_MID, 0, 74);
+        lv_obj_set_size(getapps_list, 310, 132);
+        lv_obj_align(getapps_list, LV_ALIGN_TOP_MID, 0, 44);
         lv_obj_set_style_bg_opa(getapps_list, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(getapps_list, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(getapps_list, 4, LV_PART_MAIN);
@@ -10935,7 +10782,7 @@ void TFTView_320x240::armLockGlance(void)
 // the current app open ... it seems to close everything and go back to the homepage".
 //
 // ⛔ THE SAVED POINTER CAN BE DEAD BY NOW, and following it would be a crash, not a bug. The idle
-// teardown hooks run WHILE THE DEVICE IS LOCKED - gemini_idle_check() and chess_idle_check() are
+// teardown hooks run WHILE THE DEVICE IS LOCKED - gemini_idle_check() are
 // in the same poll that notices the lock - and both delete their whole screen to hand memory back.
 // So the one app most likely to be open when it sleeps is also the one most likely to have been
 // freed underneath us. lv_obj_is_valid() is the check; Home is the answer when it fails.
@@ -11010,7 +10857,7 @@ void TFTView_320x240::restoreAfterUnlock(void)
     //
     // "on the color whenever im tpying in the pin, its just reboots" - on the OK press, i.e. right
     // here. lv_obj_is_valid() walks the whole tree and returns true for ANY live object, children
-    // included. Gemini and chess DELETE THEIR ENTIRE SCREEN while the device is asleep, to hand
+    // included. Gemini DELETE ITS ENTIRE SCREEN while the device is asleep, to hand
     // memory back - so the saved pointer can be freed, the allocator can hand that address to some
     // button on another screen, and is_valid() then cheerfully says yes. Passing a button to
     // lv_screen_load_anim() is what reboots it.
@@ -11019,7 +10866,7 @@ void TFTView_320x240::restoreAfterUnlock(void)
     // the candidate, it only compares pointers - and only then ask for its parent.
     //
     // ⚠️ This is also exactly why I could not reproduce it: I tested with Settings and Maps, which
-    // are never freed. Jake uses Mail, Gemini and chess, which are. Choosing the convenient test
+    // are never freed. Jake uses Mail and Gemini, which are. Choosing the convenient test
     // subject chose away the bug.
     // ⚠️ I DISABLED THIS ONCE ON EVIDENCE THAT TURNED OUT TO BE MY OWN TEST HARNESS. Two runs
     // "rebooted" on wake, so resume was neutralised to isolate it - and then the same test
@@ -11489,7 +11336,6 @@ void TFTView_320x240::remoteService(void)
                 case 10: THIS->openMaps(); lv_async_call([](void *) { THIS->openPinsList(); }, nullptr); break;
                 case 11: THIS->openGetApps(); break;
                 case 12: THIS->showLockPad(false); break;
-                case 13: chess_open(); break;
                 case 14: mail_open(); break;
                 default: break;
                 }
@@ -12043,6 +11889,12 @@ void TFTView_320x240::showLockGlance(void)
         lv_obj_set_style_text_color(glance_slide_label, lv_color_hex(0x8e8e93), LV_PART_MAIN);
         lv_obj_align(glance_slide_label, LV_ALIGN_BOTTOM_MID, 14, -20);
 
+        lv_obj_t *calibrationHint = lv_label_create(lockglance_screen);
+        lv_label_set_text(calibrationHint, "タッチ調整: Alt+C");
+        lv_obj_set_style_text_color(calibrationHint, lv_color_hex(0x8e8e93), LV_PART_MAIN);
+        lv_obj_set_style_text_font(calibrationHint, &tui_font_japanese, LV_PART_MAIN);
+        lv_obj_align(calibrationHint, LV_ALIGN_BOTTOM_MID, 0, -57);
+
         lv_obj_add_event_cb(
             glance_slider,
             [](lv_event_t *e) {
@@ -12398,6 +12250,12 @@ void TFTView_320x240::showLockPad(bool setMode)
         lv_obj_set_style_text_letter_space(lock_digits_label, 4, LV_PART_MAIN);
         lv_obj_align(lock_digits_label, LV_ALIGN_TOP_MID, 0, 24);
 
+        lv_obj_t *calibrationHint = lv_label_create(lockpad_screen);
+        lv_label_set_text(calibrationHint, "タッチ調整: Alt+C");
+        lv_obj_set_style_text_color(calibrationHint, lv_color_hex(0x8e8e93), LV_PART_MAIN);
+        lv_obj_set_style_text_font(calibrationHint, &tui_font_japanese, LV_PART_MAIN);
+        lv_obj_align(calibrationHint, LV_ALIGN_TOP_MID, 0, 48);
+
         // plain "<" / "OK" instead of symbol glyphs — the custom 20pt font's symbol
         // coverage is unverified, and a blank Enter key on a lock screen is a disaster
         static const char *const pinmap[] = {"1", "2", "3", "\n", "4", "5", "6", "\n", "7", "8", "9", "\n",
@@ -12405,7 +12263,7 @@ void TFTView_320x240::showLockPad(bool setMode)
         lv_obj_t *pad = lv_buttonmatrix_create(lockpad_screen);
         lv_buttonmatrix_set_map(pad, pinmap);
         // dark theme + big touch targets (fills the width, ~2/3 of the height)
-        lv_obj_set_size(pad, 312, 178);
+        lv_obj_set_size(pad, 312, 164);
         lv_obj_align(pad, LV_ALIGN_BOTTOM_MID, 0, -4);
         lv_obj_set_style_bg_color(pad, lv_color_hex(0x000000), LV_PART_MAIN);
         lv_obj_set_style_border_width(pad, 0, LV_PART_MAIN);
@@ -12427,9 +12285,7 @@ void TFTView_320x240::showLockPad(bool setMode)
     lv_screen_load_anim(lockpad_screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
 }
 
-// Alt+C shortcut from the lock pad: run the touch-screen calibration (same routine as the Settings
-// button), then re-show the lock pad. This only bypasses the PIN to *reach* calibration — it does
-// NOT unlock the device; the user still enters their PIN afterwards (now with a working touch).
+// Alt+C runs calibration without requiring touch input, then returns to the active lock mode.
 void TFTView_320x240::startCalibrationFromLock(void)
 {
     uint16_t *parameters = (uint16_t *)db.uiConfig.calibration_data.bytes;
@@ -12438,17 +12294,21 @@ void TFTView_320x240::startCalibrationFromLock(void)
     db.uiConfig.calibration_data.size = 16;
     controller->storeUIConfig(db.uiConfig);          // persist the fresh calibration across reboots
 
-    // Back to the PIN pad (still locked). calibrate() drew straight to the panel BEHIND LVGL's
-    // back — and since lockpad_screen is already the active screen, showLockPad()'s screen-load is
-    // a no-op and LVGL sees nothing to repaint (the pad only reappeared on the next touch). So
-    // explicitly invalidate everything and repaint NOW for a clean, instant handoff.
-    lockState = LOCK_ENTRY;
-    lockLen = 0;
-    lockDigits[0] = 0;
+    // Calibration draws directly to the panel behind LVGL, so force a repaint after restoring
+    // the current lock screen.
     tdeck_hold_dark = false;
     tdeck_input_gated = false;
-    showLockPad(false);
-    lv_obj_invalidate(lockpad_screen); // full-screen damage: repaint over the calibration leftovers
+    if (tdeck_lock_mode() == 1) {
+        lockState = LOCK_GLANCE;
+        showLockGlance();
+        lv_obj_invalidate(lockglance_screen);
+    } else {
+        lockState = LOCK_ENTRY;
+        lockLen = 0;
+        lockDigits[0] = 0;
+        showLockPad(false);
+        lv_obj_invalidate(lockpad_screen);
+    }
     lv_refr_now(NULL);                 // ...and flush it to the panel immediately
 }
 
@@ -16358,6 +16218,7 @@ void TFTView_320x240::ui_event_ok(lv_event_t *e)
         case eSetup: {
             meshtastic_Config_LoRaConfig_RegionCode region =
                 (meshtastic_Config_LoRaConfig_RegionCode)(lv_dropdown_get_selected(objects.setup_region_dropdown) + 1);
+            const bool regionChanged = region != THIS->db.config.lora.region;
 
             uint32_t numChannels = LoRaPresets::getNumChannels(region, THIS->db.config.lora.modem_preset);
             // if (numChannels == 0) {
@@ -16366,7 +16227,26 @@ void TFTView_320x240::ui_event_ok(lv_event_t *e)
             //     return;
             // }
 
-            if (region != THIS->db.config.lora.region) {
+            char buf[30];
+            const char *userShort = lv_textarea_get_text(objects.setup_user_short_textarea);
+            const char *userLong = lv_textarea_get_text(objects.setup_user_long_textarea);
+            if (strcmp(userShort, THIS->db.short_name) || strcmp(userLong, THIS->db.long_name)) {
+                lv_snprintf(buf, sizeof(buf), _("User name: %s"), userShort);
+                lv_label_set_text(objects.basic_settings_user_label, buf);
+                lv_label_set_text(objects.user_name_short_label, userShort);
+                lv_label_set_text(objects.user_name_label, userLong);
+                meshtastic_User user{}; // TODO: don't overwrite is_licensed
+                lv_snprintf(user.short_name, sizeof(user.short_name), "%s", userShort);
+                lv_snprintf(user.long_name, sizeof(user.long_name), "%s", userLong);
+                lv_snprintf(THIS->db.short_name, sizeof(THIS->db.short_name), "%s", user.short_name);
+                lv_snprintf(THIS->db.long_name, sizeof(THIS->db.long_name), "%s", user.long_name);
+                lv_label_set_text(objects.user_name_short_label, user.short_name);
+                lv_label_set_text(objects.user_name_label, user.long_name);
+                THIS->controller->sendConfig(user, THIS->ownNode);
+            }
+
+            // Queue the owner name before a region change, which can reboot the radio.
+            if (regionChanged) {
                 char buf1[10], buf2[30];
                 lv_dropdown_get_selected_str(objects.setup_region_dropdown, buf1, sizeof(buf1));
                 lv_snprintf(buf2, sizeof(buf2), _("Region: %s"), buf1);
@@ -16381,24 +16261,8 @@ void TFTView_320x240::ui_event_ok(lv_event_t *e)
                 lora.region = region;
                 lora.channel_num = (defaultSlot <= numChannels ? defaultSlot : 1);
                 THIS->controller->sendConfig(meshtastic_Config_LoRaConfig{lora}, THIS->ownNode);
+                THIS->notifyReboot(true);
             }
-
-            char buf[30];
-            const char *userShort = lv_textarea_get_text(objects.setup_user_short_textarea);
-            const char *userLong = lv_textarea_get_text(objects.setup_user_long_textarea);
-            if (strcmp(userShort, THIS->db.short_name) || strcmp(userLong, THIS->db.long_name)) {
-                lv_snprintf(buf, sizeof(buf), _("User name: %s"), userShort);
-                lv_label_set_text(objects.basic_settings_user_label, buf);
-                lv_label_set_text(objects.user_name_short_label, userShort);
-                lv_label_set_text(objects.user_name_label, userLong);
-                strcpy(THIS->db.short_name, userShort);
-                strcpy(THIS->db.long_name, userLong);
-                meshtastic_User user{}; // TODO: don't overwrite is_licensed
-                strcpy(user.short_name, userShort);
-                strcpy(user.long_name, userLong);
-                THIS->controller->sendConfig(user, THIS->ownNode);
-            }
-            THIS->notifyReboot(true);
 
             lv_obj_add_flag(objects.initial_setup_panel, LV_OBJ_FLAG_HIDDEN);
             lv_group_focus_obj(objects.home_button);
@@ -16413,13 +16277,14 @@ void TFTView_320x240::ui_event_ok(lv_event_t *e)
                 lv_label_set_text(objects.basic_settings_user_label, buf);
                 lv_label_set_text(objects.user_name_short_label, userShort);
                 lv_label_set_text(objects.user_name_label, userLong);
-                strcpy(THIS->db.short_name, userShort);
-                strcpy(THIS->db.long_name, userLong);
                 meshtastic_User user{}; // TODO: don't overwrite is_licensed
-                strcpy(user.short_name, userShort);
-                strcpy(user.long_name, userLong);
+                lv_snprintf(user.short_name, sizeof(user.short_name), "%s", userShort);
+                lv_snprintf(user.long_name, sizeof(user.long_name), "%s", userLong);
+                lv_snprintf(THIS->db.short_name, sizeof(THIS->db.short_name), "%s", user.short_name);
+                lv_snprintf(THIS->db.long_name, sizeof(THIS->db.long_name), "%s", user.long_name);
+                lv_label_set_text(objects.user_name_short_label, user.short_name);
+                lv_label_set_text(objects.user_name_label, user.long_name);
                 THIS->controller->sendConfig(user, THIS->ownNode);
-                THIS->notifyReboot(true);
             }
             lv_obj_add_flag(objects.settings_username_panel, LV_OBJ_FLAG_HIDDEN);
             lv_group_focus_obj(objects.basic_settings_user_button);

@@ -314,7 +314,7 @@ void buildChannelList(void)
     // People first: that is what this app is opened for.
     const int nConvo = tui_dm_conversations(convos, kMaxConvos);
     if (nConvo > 0)
-        sectionHeader("PEOPLE");
+        sectionHeader("DIRECT MESSAGES");
     for (int i = 0; i < nConvo; i++) {
         shown++;
         char last[80], preview[80];
@@ -335,20 +335,18 @@ void buildChannelList(void)
         lv_obj_add_event_cb(row, onOpenDm, LV_EVENT_CLICKED, (void *)(uintptr_t)convos[i]);
     }
 
-    if (nConvo > 0)
-        sectionHeader("CHANNELS");
+    sectionHeader("PRIMARY CHANNEL");
     for (int i = 0; i < tdeck_channel_count(); i++) {
         const int role = tdeck_channel_role(i);
-        if (role == 0)
-            continue; // disabled slots are not channels
+        if (role != 1)
+            continue; // only show the primary channel
         shown++;
 
         // The position precision is the interesting fact about a channel: it decides
         // whether the map can show people where they actually are.
         const int prec = tdeck_channel_precision(i);
         char sub[64];
-        snprintf(sub, sizeof(sub), "%s  -  %s", role == 1 ? "Primary" : "Secondary",
-                 prec >= 32 ? "exact positions" : (prec > 0 ? "approx positions" : "no positions"));
+        snprintf(sub, sizeof(sub), "%s", prec >= 32 ? "Exact positions" : (prec > 0 ? "Approx. positions" : "Primary channel"));
 
         // Channels get a count too now. They never had one: the old flag only ever knew about
         // direct messages, so a busy channel looked exactly as quiet as an empty one.
@@ -357,26 +355,10 @@ void buildChannelList(void)
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(row, onOpenChat, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-        // People button on the custom channels only - the primary is everyone by
-        // definition, so a list there says nothing. Sits between the time column and the
-        // right edge, where nothing else lives on a channel row.
-        if (role != 1) {
-            lv_obj_t *btn = lv_obj_create(row);
-            lv_obj_remove_style_all(btn);
-            lv_obj_set_size(btn, 40, 40);
-            lv_obj_align(btn, LV_ALIGN_RIGHT_MID, -8, 0);
-            lv_obj_set_style_bg_color(btn, lv_color_hex(0x2c2c2e), LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_radius(btn, 8, LV_PART_MAIN);
-            lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(btn, onOpenMembers, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-            peopleIcon(btn);
-        }
     }
 
     if (!shown)
-        lv_label_set_text(noteLbl, "No conversations yet.\nChannels appear here once configured,\nand people once you have messaged.");
+        lv_label_set_text(noteLbl, "No direct messages yet.\nYour primary channel appears here\nonce it is configured.");
     else
         lv_label_set_text(noteLbl, "");
 }
@@ -448,7 +430,7 @@ void buildScreen(void)
     lv_obj_center(bl);
 
     titleLbl = lv_label_create(screen);
-    lv_label_set_text(titleLbl, "Channels");
+    lv_label_set_text(titleLbl, "Messages");
     lv_obj_set_style_text_color(titleLbl, lv_color_hex(0x30d158), LV_PART_MAIN);
     lv_obj_align(titleLbl, LV_ALIGN_TOP_MID, 0, 9);
 

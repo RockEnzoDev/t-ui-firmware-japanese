@@ -12,9 +12,8 @@
 // more files would have been three places to look. These are one subject, so they live
 // in one file and share one NVS namespace.
 //
-// BACKWARD COMPATIBLE ON PURPOSE. The old bool is still read: a device that has only
-// ever known "lock on/off" comes back as PIN (it had a PIN) or OFF, exactly as before.
-// Nobody's device changes behaviour because the setting grew a third option.
+// BACKWARD COMPATIBLE ON PURPOSE. A saved old "on" value still becomes PIN and "off"
+// stays OFF. An absent setting means the owner has not enabled a lock, so it defaults OFF.
 //
 // NVS rather than the nodeDB config, for the reason TDeckLockControl.cpp gives: a
 // filesystem write from the UI (LVGL) task is what froze this device when the time-zone
@@ -44,7 +43,7 @@ static void loadAll(void)
         return;
     Preferences p;
     if (!p.begin("tdecklock", true)) { // namespace not created yet: first-run defaults
-        s_mode = 2;                    // PIN, matching the old default of "lock on"
+        s_mode = 0;                    // first-run devices must be usable before setup
         s_widget = 3;                  // Sun: the one that earns its place on a hunting radio
         s_wxMins = 60;
         return;
@@ -52,14 +51,14 @@ static void loadAll(void)
     if (p.isKey("mode")) {
         s_mode = (int)p.getUChar("mode", 2);
     } else {
-        // Migrate the old on/off bool. "On" meant a PIN was required, so that is PIN.
-        s_mode = p.getBool("en", true) ? 2 : 0;
+        // Migrate the old on/off bool. A missing key means the user never enabled the lock.
+        s_mode = p.getBool("en", false) ? 2 : 0;
     }
     s_widget = (int)p.getUChar("widget", 3);
     s_wxMins = (int)p.getUShort("wxmins", 60);
     p.end();
     if (s_mode < 0 || s_mode > 2)
-        s_mode = 2;
+        s_mode = 0;
     if (s_widget < 0 || s_widget > 3)
         s_widget = 3;
 }

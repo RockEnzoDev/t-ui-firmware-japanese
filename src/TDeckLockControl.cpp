@@ -1,9 +1,8 @@
 // -----------------------------------------------------------------------------
 // T-Deck launcher: lock-screen on/off (firmware side).
 //
-// The launcher always boots to a PIN pad (a code is always in effect — default 1234
-// until the user picks their own). Some people don't want a lock at all, so this adds
-// a persistent on/off flag the Settings screen can flip.
+// The lock mode is an optional user preference. New devices start unlocked so setup and
+// touch calibration are reachable before the owner has configured the device.
 //
 // It lives in NVS — internal flash, no SPI — deliberately, NOT in the config that
 // nodeDB writes over the shared filesystem. A flash write to that filesystem from the
@@ -11,7 +10,7 @@
 // tried it (see TDeckTimeZone.cpp). NVS via Preferences has its own lock and is
 // task-safe, so the switch handler can write this directly with no deferred plumbing.
 //
-// Default is ON: a device nobody has touched keeps locking exactly as it did before.
+// Default is OFF; choosing Swipe or PIN in Settings persists the preference in NVS.
 // -----------------------------------------------------------------------------
 #include <Preferences.h>
 
