@@ -32,6 +32,15 @@ Note: `lib/meshtastic-device-ui/maps/` (upstream demo map tiles, ~67 MB of unmod
 sample data) is omitted from this repo to keep it lean; it is not needed to build.
 Map tiles are user data loaded onto the SD card.
 
+## Japanese chat support
+
+The T-DECK chat view includes a Japanese font fallback for kana and the 2,136 Joyo
+Kanji. Tap the `A` button beside the message field to switch to Japanese input, then
+type romaji to enter hiragana (for example, `konnichiha` → `こんにちは`). Tap `あ` to
+return to direct Latin input. This first input version does not convert hiragana to
+kanji; the font notice and license are in
+`lib/meshtastic-device-ui/generated/ui_320x240/`.
+
 ## Main modifications (vs stock Meshtastic)
 
 - `lib/meshtastic-device-ui/source/graphics/TFT/TFTView_320x240.cpp` (+ header) — the

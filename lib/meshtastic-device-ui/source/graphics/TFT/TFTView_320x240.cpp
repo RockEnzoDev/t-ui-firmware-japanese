@@ -25,8 +25,10 @@
 #include "util/FileLoader.h"
 #include "util/ILog.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <new> // std::nothrow, so a failed GUI allocation can't abort the boot
 #include <iomanip>
@@ -73,6 +75,199 @@ LV_IMAGE_DECLARE(node_location_pin24_image);
 
 #define CR_REPLACEMENT 0x0C              // dummy to record several lines in a one line textarea
 #define THIS TFTView_320x240::instance() // need to use this in all static methods
+
+namespace
+{
+bool japaneseInputEnabled = false;
+char japaneseInputPending[4] = "";
+lv_obj_t *japaneseInputButton = nullptr;
+
+struct RomajiKana {
+    const char *romaji;
+    const char *kana;
+};
+
+constexpr RomajiKana kRomajiKana[] = {
+    {"a", "あ"}, {"i", "い"}, {"u", "う"}, {"e", "え"}, {"o", "お"},
+    {"ka", "か"}, {"ki", "き"}, {"ku", "く"}, {"ke", "け"}, {"ko", "こ"},
+    {"ga", "が"}, {"gi", "ぎ"}, {"gu", "ぐ"}, {"ge", "げ"}, {"go", "ご"},
+    {"sa", "さ"}, {"shi", "し"}, {"si", "し"}, {"su", "す"}, {"se", "せ"}, {"so", "そ"},
+    {"za", "ざ"}, {"ji", "じ"}, {"zi", "じ"}, {"zu", "ず"}, {"ze", "ぜ"}, {"zo", "ぞ"},
+    {"ta", "た"}, {"chi", "ち"}, {"ti", "ち"}, {"tsu", "つ"}, {"tu", "つ"}, {"te", "て"}, {"to", "と"},
+    {"da", "だ"}, {"di", "ぢ"}, {"du", "づ"}, {"de", "で"}, {"do", "ど"},
+    {"na", "な"}, {"ni", "に"}, {"nu", "ぬ"}, {"ne", "ね"}, {"no", "の"},
+    {"ha", "は"}, {"hi", "ひ"}, {"fu", "ふ"}, {"hu", "ふ"}, {"he", "へ"}, {"ho", "ほ"},
+    {"ba", "ば"}, {"bi", "び"}, {"bu", "ぶ"}, {"be", "べ"}, {"bo", "ぼ"},
+    {"pa", "ぱ"}, {"pi", "ぴ"}, {"pu", "ぷ"}, {"pe", "ぺ"}, {"po", "ぽ"},
+    {"ma", "ま"}, {"mi", "み"}, {"mu", "む"}, {"me", "め"}, {"mo", "も"},
+    {"ya", "や"}, {"yu", "ゆ"}, {"yo", "よ"},
+    {"ra", "ら"}, {"ri", "り"}, {"ru", "る"}, {"re", "れ"}, {"ro", "ろ"},
+    {"wa", "わ"}, {"wo", "を"}, {"nn", "ん"},
+    {"kya", "きゃ"}, {"kyu", "きゅ"}, {"kyo", "きょ"}, {"gya", "ぎゃ"}, {"gyu", "ぎゅ"}, {"gyo", "ぎょ"},
+    {"sha", "しゃ"}, {"shu", "しゅ"}, {"sho", "しょ"}, {"sya", "しゃ"}, {"syu", "しゅ"}, {"syo", "しょ"},
+    {"ja", "じゃ"}, {"ju", "じゅ"}, {"jo", "じょ"}, {"jya", "じゃ"}, {"jyu", "じゅ"}, {"jyo", "じょ"},
+    {"cha", "ちゃ"}, {"chu", "ちゅ"}, {"cho", "ちょ"}, {"tya", "ちゃ"}, {"tyu", "ちゅ"}, {"tyo", "ちょ"},
+    {"nya", "にゃ"}, {"nyu", "にゅ"}, {"nyo", "にょ"}, {"hya", "ひゃ"}, {"hyu", "ひゅ"}, {"hyo", "ひょ"},
+    {"bya", "びゃ"}, {"byu", "びゅ"}, {"byo", "びょ"}, {"pya", "ぴゃ"}, {"pyu", "ぴゅ"}, {"pyo", "ぴょ"},
+    {"mya", "みゃ"}, {"myu", "みゅ"}, {"myo", "みょ"}, {"rya", "りゃ"}, {"ryu", "りゅ"}, {"ryo", "りょ"},
+    {"fa", "ふぁ"}, {"fi", "ふぃ"}, {"fe", "ふぇ"}, {"fo", "ふぉ"},
+};
+
+void appendJapaneseText(const char *text)
+{
+    if (text && *text)
+        lv_textarea_add_text(objects.message_input_area, text);
+}
+
+bool romajiPrefix(const char *text)
+{
+    for (const auto &entry : kRomajiKana)
+        if (strncmp(entry.romaji, text, strlen(text)) == 0)
+            return true;
+    return text[0] == 'n' && text[1] == 0;
+}
+
+bool romajiHasLongerPrefix(const char *text)
+{
+    const size_t len = strlen(text);
+    for (const auto &entry : kRomajiKana)
+        if (strlen(entry.romaji) > len && strncmp(entry.romaji, text, len) == 0)
+            return true;
+    return false;
+}
+
+const char *romajiExact(const char *text)
+{
+    for (const auto &entry : kRomajiKana)
+        if (strcmp(entry.romaji, text) == 0)
+            return entry.kana;
+    return nullptr;
+}
+
+void flushJapaneseInput(void)
+{
+    if (!japaneseInputPending[0])
+        return;
+    if (!strcmp(japaneseInputPending, "n"))
+        appendJapaneseText("ん");
+    else if (const char *kana = romajiExact(japaneseInputPending))
+        appendJapaneseText(kana);
+    else
+        appendJapaneseText(japaneseInputPending);
+    japaneseInputPending[0] = 0;
+}
+
+void acceptRomaji(char key)
+{
+    key = (char)tolower((unsigned char)key);
+    if (!strcmp(japaneseInputPending, "nn")) {
+        if (strchr("aiueo y", key)) {
+            appendJapaneseText("ん");
+            japaneseInputPending[0] = 'n';
+            japaneseInputPending[1] = 0;
+            acceptRomaji(key);
+            return;
+        }
+        appendJapaneseText("ん");
+        japaneseInputPending[0] = 0;
+    }
+    if (japaneseInputPending[0] == 'n' && key != 'n' && key != 'y' && key != 'a' && key != 'i' && key != 'u' && key != 'e' &&
+        key != 'o') {
+        appendJapaneseText("ん");
+        japaneseInputPending[0] = 0;
+    }
+    if (japaneseInputPending[0] && japaneseInputPending[1] == 0 && japaneseInputPending[0] == key && key != 'n' &&
+        !strchr("aiueo", key)) {
+        appendJapaneseText("っ");
+        japaneseInputPending[0] = key;
+        japaneseInputPending[1] = 0;
+        return;
+    }
+
+    size_t len = strlen(japaneseInputPending);
+    if (len >= sizeof(japaneseInputPending) - 1) {
+        flushJapaneseInput();
+        len = 0;
+    }
+    japaneseInputPending[len] = key;
+    japaneseInputPending[len + 1] = 0;
+
+    if (!strcmp(japaneseInputPending, "nn"))
+        return;
+
+    if (const char *kana = romajiExact(japaneseInputPending); kana && !romajiHasLongerPrefix(japaneseInputPending)) {
+        appendJapaneseText(kana);
+        japaneseInputPending[0] = 0;
+    } else if (!romajiPrefix(japaneseInputPending)) {
+        if (japaneseInputPending[0] == 'n') {
+            appendJapaneseText("ん");
+            char rest = japaneseInputPending[1];
+            japaneseInputPending[0] = 0;
+            if (rest)
+                acceptRomaji(rest);
+        } else {
+            appendJapaneseText(japaneseInputPending);
+            japaneseInputPending[0] = 0;
+        }
+    }
+}
+
+void toggleJapaneseInput(lv_event_t *event)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED)
+        return;
+    flushJapaneseInput();
+    japaneseInputEnabled = !japaneseInputEnabled;
+    lv_obj_t *label = lv_obj_get_child(japaneseInputButton, 0);
+    if (label)
+        lv_label_set_text(label, japaneseInputEnabled ? "あ" : "A");
+}
+} // namespace
+
+extern "C" bool tdeck_jp_ime_handle_key(lv_obj_t *focused, uint32_t key)
+{
+    if (!japaneseInputEnabled || focused != objects.message_input_area)
+        return false;
+    if (key == LV_KEY_BACKSPACE) {
+        size_t len = strlen(japaneseInputPending);
+        if (len) {
+            japaneseInputPending[len - 1] = 0;
+            return true;
+        }
+        return false;
+    }
+    if (key == LV_KEY_ENTER) {
+        flushJapaneseInput();
+        return false;
+    }
+    if (key == ' ') {
+        flushJapaneseInput();
+        appendJapaneseText(" ");
+        return true;
+    }
+    if (key == '\'') {
+        if (!strcmp(japaneseInputPending, "n")) {
+            appendJapaneseText("ん");
+            japaneseInputPending[0] = 0;
+        }
+        return true;
+    }
+    if (key >= 'a' && key <= 'z') {
+        acceptRomaji((char)key);
+        return true;
+    }
+    if (key >= 'A' && key <= 'Z') {
+        acceptRomaji((char)key);
+        return true;
+    }
+    if (key < 128 && key >= 32) {
+        flushJapaneseInput();
+        char text[2] = {(char)key, 0};
+        appendJapaneseText(text);
+        return true;
+    }
+    return false;
+}
 
 // Mesh kill-switch bridge into the firmware (defined in src/TDeckMeshSwitch.cpp).
 // Linked across the UI/mesh boundary as a free function (no shared header).
@@ -12343,6 +12538,16 @@ void TFTView_320x240::init_screens(void)
     ui_init();
     apply_hotfix();
 
+    japaneseInputButton = lv_btn_create(objects.messages_panel);
+    lv_obj_set_size(japaneseInputButton, 24, 24);
+    lv_obj_align(japaneseInputButton, LV_ALIGN_BOTTOM_RIGHT, -32, -2);
+    lv_obj_set_width(objects.message_input_area, lv_pct(70));
+    lv_obj_t *japaneseInputLabel = lv_label_create(japaneseInputButton);
+    lv_label_set_text(japaneseInputLabel, "A");
+    lv_obj_set_style_text_font(japaneseInputLabel, &tui_font_japanese, LV_PART_MAIN);
+    lv_obj_center(japaneseInputLabel);
+    lv_obj_add_event_cb(japaneseInputButton, toggleJapaneseInput, LV_EVENT_CLICKED, NULL);
+
     activeMsgContainer = objects.messages_container;
     // setup the two channel label panels with arrays that allow indexing
     channel = {objects.channel_label0, objects.channel_label1, objects.channel_label2, objects.channel_label3,
@@ -18932,7 +19137,7 @@ void TFTView_320x240::newMessage(uint32_t nodeNum, lv_obj_t *container, uint8_t 
 
     lv_obj_t *msgLabel = lv_label_create(hiddenPanel);
     // calculate expected size of text bubble, to make it look nicer
-    lv_coord_t width = lv_txt_get_width(msg, strlen(msg), &ui_font_montserrat_14, 0);
+            lv_coord_t width = lv_txt_get_width(msg, strlen(msg), &ui_font_montserrat_14, 0);
     lv_obj_set_width(msgLabel, std::max<int32_t>(std::min<int32_t>((int32_t)(width), 160) + 10, 40));
     lv_obj_set_height(msgLabel, LV_SIZE_CONTENT);
     lv_obj_set_align(msgLabel, LV_ALIGN_LEFT_MID);

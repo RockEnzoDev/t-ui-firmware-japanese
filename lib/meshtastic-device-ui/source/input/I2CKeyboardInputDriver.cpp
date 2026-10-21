@@ -33,6 +33,7 @@ extern "C" bool tdeck_lua_app_focused(void);
 extern "C" void tdeck_lua_queue_key(uint32_t key);
 // A Lua app can set keep_back=true to keep the erase/Back key for itself (src/TDeckLua.cpp).
 extern "C" bool tdeck_lua_app_keeps_back(void);
+extern "C" bool tdeck_jp_ime_handle_key(lv_obj_t *focused, uint32_t key);
 
 I2CKeyboardInputDriver::KeyboardList I2CKeyboardInputDriver::i2cKeyboardList;
 
@@ -197,6 +198,11 @@ void I2CKeyboardInputDriver::keyboard_read(lv_indev_t *indev, lv_indev_data_t *d
                     data->key = 0;
                     break;
                 }
+            }
+            if (focused && tdeck_jp_ime_handle_key(focused, data->key)) {
+                data->state = LV_INDEV_STATE_RELEASED;
+                data->key = 0;
+                break;
             }
             // If any keyboard reports a key press, we stop reading further
             return;
