@@ -2765,17 +2765,47 @@ void TFTView_320x240::createSettingsScreen(void)
     lv_obj_set_style_text_color(sndHint, lv_color_hex(0x8e8e93), LV_PART_MAIN);
     lv_obj_align(sndHint, LV_ALIGN_TOP_LEFT, 16, 638);
 
+    // Radio/channel settings stay available from the simplified launcher. Reuse the
+    // firmware's existing settings panels so region, modem preset and channel edits go
+    // through the same validated Meshtastic config path as before.
+    lv_obj_t *radioLbl = lv_label_create(settings_screen);
+    lv_label_set_text(radioLbl, "LoRa radio and channels");
+    lv_obj_set_style_text_color(radioLbl, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_align(radioLbl, LV_ALIGN_TOP_LEFT, 16, 710);
+
+    lv_obj_t *radioBtn = lv_btn_create(settings_screen);
+    lv_obj_set_size(radioBtn, 110, 30);
+    lv_obj_align(radioBtn, LV_ALIGN_TOP_RIGHT, -16, 706);
+    lv_obj_set_style_radius(radioBtn, 8, LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        radioBtn,
+        [](lv_event_t *) {
+            lv_screen_load_anim(objects.main_screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+            if (THIS->db.uiConfig.settings_lock) {
+                lv_obj_add_flag(objects.tab_page_basic_settings, LV_OBJ_FLAG_HIDDEN);
+                THIS->ui_set_active(objects.settings_button, objects.controller_panel, objects.top_settings_panel);
+                lv_screen_load_anim(objects.lock_screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+            } else {
+                THIS->ui_set_active(objects.settings_button, objects.controller_panel, objects.top_settings_panel);
+            }
+        },
+        LV_EVENT_CLICKED, NULL);
+    lv_obj_t *radioBtnLbl = lv_label_create(radioBtn);
+    lv_obj_set_style_text_font(radioBtnLbl, &ui_font_montserrat_12, LV_PART_MAIN);
+    lv_label_set_text(radioBtnLbl, "Open settings");
+    lv_obj_center(radioBtnLbl);
+
     // "Add channel" row — reads a Meshtastic channel link from /channel.txt on the card.
     // Typing a 150-character link on the thumb keyboard isn't realistic, and there's no
     // camera for the usual QR code, so a file on the card is the practical route.
     lv_obj_t *chLbl = lv_label_create(settings_screen);
     lv_label_set_text(chLbl, "Add channel");
     lv_obj_set_style_text_color(chLbl, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_align(chLbl, LV_ALIGN_TOP_LEFT, 16, 710);
+    lv_obj_align(chLbl, LV_ALIGN_TOP_LEFT, 16, 754);
 
     lv_obj_t *chBtn = lv_btn_create(settings_screen);
     lv_obj_set_size(chBtn, 110, 30);
-    lv_obj_align(chBtn, LV_ALIGN_TOP_RIGHT, -16, 706);
+    lv_obj_align(chBtn, LV_ALIGN_TOP_RIGHT, -16, 750);
     lv_obj_set_style_radius(chBtn, 8, LV_PART_MAIN);
     lv_obj_t *chBtnLbl = lv_label_create(chBtn);
     lv_obj_set_style_text_font(chBtnLbl, &ui_font_montserrat_12, LV_PART_MAIN);
@@ -2788,7 +2818,7 @@ void TFTView_320x240::createSettingsScreen(void)
     lv_obj_set_style_text_font(channel_import_label, &ui_font_montserrat_12, LV_PART_MAIN);
     lv_label_set_text(channel_import_label, "Put the channel link in channel.txt on the card, then tap.");
     lv_obj_set_style_text_color(channel_import_label, lv_color_hex(0x8e8e93), LV_PART_MAIN);
-    lv_obj_align(channel_import_label, LV_ALIGN_TOP_LEFT, 16, 740);
+    lv_obj_align(channel_import_label, LV_ALIGN_TOP_LEFT, 16, 784);
 
     lv_obj_add_event_cb(
         chBtn, [](lv_event_t *) { THIS->importChannelFromCard(); }, LV_EVENT_CLICKED, NULL);
