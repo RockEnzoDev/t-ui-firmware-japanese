@@ -14620,8 +14620,21 @@ void TFTView_320x240::tuiShowOnUserMap(uint32_t nodeNum, int32_t latI, int32_t l
 // it has not built a row for would otherwise leave the user staring at the previous screen.
 void TFTView_320x240::openChatWithNode(uint32_t nodeNum)
 {
+    auto nodeIt = nodes.find(nodeNum);
+    if (nodeIt == nodes.end() || !nodeIt->second) {
+        ILOG_WARN("openChatWithNode: no node panel for 0x%08x", (unsigned)nodeNum);
+        return;
+    }
+
     showMessages(nodeNum);
-    ui_set_active(objects.messages_button, objects.messages_panel, objects.top_messages_panel);
+    // showMessages(nodeNum) selects the MUI conversation panel itself. Selecting it again here
+    // re-runs ui_set_active's teardown path while ChannelsApp is being replaced; for a node whose
+    // panel disappeared from NodeDB this used to continue with the previous active conversation.
+    if (activePanel != objects.messages_panel || !activeMsgContainer ||
+        (uint32_t)(uintptr_t)activeMsgContainer->user_data != nodeNum) {
+        ILOG_WARN("openChatWithNode: conversation for 0x%08x was not selected", (unsigned)nodeNum);
+        return;
+    }
     lv_screen_load_anim(objects.main_screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
 }
 
@@ -19320,6 +19333,10 @@ void TFTView_320x240::showMessages(uint32_t nodeNum)
     auto nodeIt = nodes.find(nodeNum);
     if (nodeIt == nodes.end() || !nodeIt->second) {
         ILOG_WARN("showMessages: no node panel for 0x%08x, refusing to open a chat", (unsigned)nodeNum);
+        return;
+    }
+    if (lv_obj_get_child_cnt(nodeIt->second) <= node_bat_idx) {
+        ILOG_WARN("showMessages: incomplete node panel for 0x%08x, refusing to open a chat", (unsigned)nodeNum);
         return;
     }
     lv_obj_add_flag(activeMsgContainer, LV_OBJ_FLAG_HIDDEN);
